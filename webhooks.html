@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Webhooks — PayPlus REST API</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a> › Webhooks</div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html">ACH Payments</a>
+  <a href="instant.html">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html" class="active">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html">Error Codes</a>
+  <div class="nav-section">On This Page</div>
+  <a href="#overview">Overview</a>
+  <a href="#registration">Webhook Registration</a>
+  <a href="#security">Signature Verification</a>
+  <a href="#events">Event Reference</a>
+  <a href="#retry">Retry Logic</a>
+  <a href="#payloads">Payload Examples</a>
+</nav>
+
+<main class="main">
+
+  <h1>Webhooks</h1>
+  <p class="topic-meta">
+    <span>Protocol: HTTPS POST</span>
+    <span>Format: JSON</span>
+    <span>Auth: HMAC-SHA256 signature</span>
+  </p>
+
+  <p>
+    Webhooks deliver real-time payment event notifications to your application. Rather than polling the API for status updates, configure a webhook endpoint to receive a push notification whenever a payment status changes — submitted, settled, returned, or held for compliance review.
+  </p>
+
+  <div class="tip">
+    <strong>Recommended for ACH and SWIFT</strong>
+    Webhooks are especially important for batch and correspondent rails (ACH, SWIFT) where settlement may occur hours or days after the payment is initiated. Subscribe to <code>payment.settled</code> and <code>payment.returned</code> events to update your core banking records when ACH settlement confirmations and return items arrive.
+  </div>
+
+  <h2 id="overview">How Webhooks Work</h2>
+  <ol>
+    <li>You register a webhook endpoint URL in the PayPlus Admin Console or via the Webhooks API.</li>
+    <li>When a payment event occurs, PayPlus sends an HTTPS <code>POST</code> request to your endpoint with the event payload in the request body.</li>
+    <li>Your endpoint responds with HTTP <code>200</code> to acknowledge receipt. Any other response code (or no response within 30 seconds) triggers the retry sequence.</li>
+    <li>PayPlus logs all webhook delivery attempts — successful and failed — accessible at <strong>Administration &gt; API &gt; Webhook Logs</strong>.</li>
+  </ol>
+
+  <div class="important">
+    <strong>Idempotent Webhook Handlers Required</strong>
+    Due to retry logic, your endpoint may receive the same event more than once. Always use the <code>eventId</code> field to deduplicate events before processing. Store processed <code>eventId</code> values and skip events you've already handled.
+  </div>
+
+  <h2 id="registration">Webhook Registration</h2>
+
+  <h3>Register via Admin Console</h3>
+  <p>Navigate to <strong>Administration &gt; API &gt; Webhooks &gt; Add Endpoint</strong>. Enter the endpoint URL, select the event types to subscribe to, and save. PayPlus generates and displays the signing secret — store this securely. It is shown only once.</p>
+
+  <h3>Register via API</h3>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/webhooks</span>
+  </div>
+
+  <p><strong>Required scope:</strong> <code>webhooks:manage</code></p>
+
+  <pre><code>POST /v2/webhooks HTTP/1.1
+Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
+Content-Type: application/json
+
+{
+  "<span class="json-key">url</span>": "<span class="json-str">https://core.yourbank.internal/payplus/events</span>",
+  "<span class="json-key">events</span>": [
+    "<span class="json-str">payment.settled</span>",
+    "<span class="json-str">payment.returned</span>",
+    "<span class="json-str">compliance.hold</span>",
+    "<span class="json-str">compliance.released</span>"
+  ],
+  "<span class="json-key">description</span>": "<span class="json-str">Core banking settlement integration</span>",
+  "<span class="json-key">enabled</span>": <span class="json-bool">true</span>
+}</code></pre>
+
+  <p><strong><span class="status-2xx">201 Created</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">webhookId</span>": "<span class="json-str">wh_a3b9c1d7e2f4</span>",
+    "<span class="json-key">url</span>": "<span class="json-str">https://core.yourbank.internal/payplus/events</span>",
+    "<span class="json-key">events</span>": ["<span class="json-str">payment.settled</span>", "<span class="json-str">payment.returned</span>", "<span class="json-str">compliance.hold</span>", "<span class="json-str">compliance.released</span>"],
+    "<span class="json-key">signingSecret</span>": "<span class="json-str">whsec_7f3b2c9a1d4e6f8a0b2c4d6e8f0a2b4c</span>",
+    "<span class="json-key">enabled</span>": <span class="json-bool">true</span>,
+    "<span class="json-key">createdAt</span>": "<span class="json-str">2026-03-15T09:00:00Z</span>"
+  }
+}</code></pre>
+
+  <div class="warning">
+    <strong>Store the Signing Secret</strong>
+    The <code>signingSecret</code> is returned only once in this response. Store it in your application's secrets management system immediately. If you lose the signing secret, you must delete and re-create the webhook registration.
+  </div>
+
+  <h3>Manage Webhooks</h3>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/webhooks</span>
+  </div>
+  <p style="margin-top:0.25rem;margin-bottom:1.5rem;">List all registered webhook endpoints for this API client.</p>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/webhooks/{webhookId}</span>
+  </div>
+  <p style="margin-top:0.25rem;margin-bottom:1.5rem;">Get a specific webhook registration. Does not return the signing secret.</p>
+
+  <div class="endpoint">
+    <span class="method method-delete">DELETE</span>
+    <span class="endpoint-url">/v2/webhooks/{webhookId}</span>
+  </div>
+  <p style="margin-top:0.25rem;margin-bottom:1.5rem;">Delete a webhook endpoint. PayPlus will stop sending events to this URL immediately.</p>
+
+  <h2 id="security">Signature Verification</h2>
+  <p>
+    Every webhook request includes an <code>X-PayPlus-Signature</code> header containing an HMAC-SHA256 signature. Always verify this signature before processing the event — it proves the request came from PayPlus and that the payload has not been tampered with in transit.
+  </p>
+
+  <h3>Verification Algorithm</h3>
+  <pre><code><span class="json-comment"># Python example</span>
+import hmac
+import hashlib
+
+def verify_signature(payload_body: bytes, signature_header: str, signing_secret: str) -&gt; bool:
+    <span class="json-comment"># signature_header format: "t=1742038800,v1=abc123..."</span>
+    parts = dict(part.split("=", 1) for part in signature_header.split(","))
+    timestamp = parts["t"]
+    received_sig = parts["v1"]
+
+    <span class="json-comment"># Construct the signed payload: timestamp + "." + raw body</span>
+    signed_payload = f"{timestamp}.".encode() + payload_body
+
+    <span class="json-comment"># Compute HMAC-SHA256</span>
+    expected_sig = hmac.new(
+        signing_secret.encode(),
+        signed_payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    <span class="json-comment"># Constant-time comparison to prevent timing attacks</span>
+    if not hmac.compare_digest(expected_sig, received_sig):
+        return False  <span class="json-comment"># Signature mismatch — reject the request</span>
+
+    <span class="json-comment"># Optional: reject events older than 5 minutes (replay protection)</span>
+    import time
+    if abs(time.time() - int(timestamp)) &gt; 300:
+        return False
+
+    return True</code></pre>
+
+  <h2 id="events">Event Reference</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Event Type</th><th>Description</th><th>Applies To</th></tr></thead>
+      <tbody>
+        <tr><td><code>payment.validated</code></td><td>Payment passed format validation and entered the workflow</td><td>All rails</td></tr>
+        <tr><td><code>payment.approved</code></td><td>Payment approved (by workflow rule or human approver); queued for submission</td><td>All rails</td></tr>
+        <tr><td><code>payment.submitted</code></td><td>Payment submitted to the payment network</td><td>All rails</td></tr>
+        <tr><td><code>payment.settled</code></td><td>Payment settled — funds have moved. For ACH: settlement date passed and FedACH confirmation received. For Fedwire/RTP/FedNow: real-time settlement confirmation received.</td><td>All rails</td></tr>
+        <tr><td><code>payment.returned</code></td><td>Payment returned by the receiving bank after settlement. Includes return code and reason.</td><td>ACH, RTP, FedNow</td></tr>
+        <tr><td><code>payment.rejected</code></td><td>Payment rejected by PayPlus validation, compliance review, approval, or the payment network</td><td>All rails</td></tr>
+        <tr><td><code>compliance.hold</code></td><td>Payment placed on OFAC compliance hold pending Compliance Officer review</td><td>All rails</td></tr>
+        <tr><td><code>compliance.released</code></td><td>Compliance hold released — payment cleared to continue processing</td><td>All rails</td></tr>
+        <tr><td><code>compliance.rejected</code></td><td>Payment rejected by Compliance Officer from the hold queue</td><td>All rails</td></tr>
+        <tr><td><code>wire.recall.resolved</code></td><td>Wire recall request has been accepted (funds returned) or rejected by the beneficiary bank</td><td>Fedwire, SWIFT</td></tr>
+        <tr><td><code>rfp.fulfilled</code></td><td>Request for Payment has been fulfilled — the payer approved the RfP and payment settled</td><td>RTP, FedNow</td></tr>
+        <tr><td><code>rfp.declined</code></td><td>Payer declined the Request for Payment</td><td>RTP, FedNow</td></tr>
+        <tr><td><code>batch.completed</code></td><td>ACH batch processing completed — includes counts of valid, invalid, submitted, and returned records</td><td>ACH</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="retry">Retry Logic</h2>
+  <p>
+    If your endpoint does not return <code>HTTP 200</code> within 30 seconds, PayPlus retries the delivery using an exponential backoff schedule:
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Attempt</th><th>Delay After Previous Attempt</th></tr></thead>
+      <tbody>
+        <tr><td>1 (initial)</td><td>—</td></tr>
+        <tr><td>2</td><td>1 minute</td></tr>
+        <tr><td>3</td><td>5 minutes</td></tr>
+        <tr><td>4</td><td>30 minutes</td></tr>
+        <tr><td>5</td><td>2 hours</td></tr>
+        <tr><td>6 (final)</td><td>6 hours</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    After 6 failed attempts, PayPlus marks the delivery as failed and sends an alert to the System Administrator. Events are retained for 72 hours for manual retry via the Admin Console.
+  </p>
+
+  <h2 id="payloads">Payload Examples</h2>
+
+  <h3>payment.settled — ACH</h3>
+  <pre><code>{
+  "<span class="json-key">eventId</span>": "<span class="json-str">evt_7f3c1d9e2a4b</span>",
+  "<span class="json-key">eventType</span>": "<span class="json-str">payment.settled</span>",
+  "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-17T12:00:00Z</span>",
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_ach_a3k9f2m8x7p4r1q0</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">ach</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">settled</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">350000</span>,
+    "<span class="json-key">effectiveDate</span>": "<span class="json-str">2026-03-17</span>",
+    "<span class="json-key">traceNumber</span>": "<span class="json-str">021000021000001</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">VENDOR-PMT-20260315-001</span>",
+    "<span class="json-key">settledAt</span>": "<span class="json-str">2026-03-17T12:00:00Z</span>"
+  }
+}</code></pre>
+
+  <h3>payment.returned — ACH R01</h3>
+  <pre><code>{
+  "<span class="json-key">eventId</span>": "<span class="json-str">evt_9a1c3e5f7b2d</span>",
+  "<span class="json-key">eventType</span>": "<span class="json-str">payment.returned</span>",
+  "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-18T08:30:00Z</span>",
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_ach_a3k9f2m8x7p4r1q0</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">ach</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">returned</span>",
+    "<span class="json-key">returnCode</span>": "<span class="json-str">R01</span>",
+    "<span class="json-key">returnReason</span>": "<span class="json-str">Insufficient Funds</span>",
+    "<span class="json-key">returnSettlementDate</span>": "<span class="json-str">2026-03-18</span>",
+    "<span class="json-key">representmentEligible</span>": <span class="json-bool">true</span>,
+    "<span class="json-key">representmentDeadline</span>": "<span class="json-str">2026-09-14</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">VENDOR-PMT-20260315-001</span>"
+  }
+}</code></pre>
+
+  <h3>compliance.hold — OFAC Screening</h3>
+  <pre><code>{
+  "<span class="json-key">eventId</span>": "<span class="json-str">evt_b2d4f6a8c0e1</span>",
+  "<span class="json-key">eventType</span>": "<span class="json-str">compliance.hold</span>",
+  "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T14:35:12Z</span>",
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_wire_f3a1b9c7d2e4</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">swift</span>",
+    "<span class="json-key">holdReason</span>": "<span class="json-str">OFAC_POSSIBLE_MATCH</span>",
+    "<span class="json-key">matchedField</span>": "<span class="json-str">beneficiary.name</span>",
+    "<span class="json-key">matchScore</span>": <span class="json-num">88</span>,
+    "<span class="json-key">referenceId</span>": "<span class="json-str">CLOSING-2026-03-15-001</span>",
+    "<span class="json-key">heldAt</span>": "<span class="json-str">2026-03-15T14:35:12Z</span>"
+  }
+}</code></pre>
+
+  <h3>payment.settled — FedNow (real-time)</h3>
+  <pre><code>{
+  "<span class="json-key">eventId</span>": "<span class="json-str">evt_d3f5a7c9e1b2</span>",
+  "<span class="json-key">eventType</span>": "<span class="json-str">payment.settled</span>",
+  "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T14:30:07Z</span>",
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_inst_b9c3d1f7e2a4</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">fednow</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">settled</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">50000</span>,
+    "<span class="json-key">uetr</span>": "<span class="json-str">4a7f2b9c-3d1e-5f6a-8b9c-0d1e2f3a4b5c</span>",
+    "<span class="json-key">settlementTimestamp</span>": "<span class="json-str">2026-03-15T14:30:07Z</span>",
+    "<span class="json-key">processingTimeMs</span>": <span class="json-num">5823</span>,
+    "<span class="json-key">referenceId</span>": "<span class="json-str">RENT-MAR2026-JD</span>"
+  }
+}</code></pre>
+
+  <div class="doc-nav">
+    <a href="wire.html">← Wire Transfers</a>
+    <a href="errors.html">Next: Error Codes →</a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · Webhooks · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>

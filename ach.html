@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACH Payments — PayPlus REST API</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a> › ACH Payments</div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <a href="index.html#rate-limiting">Rate Limiting</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html" class="active">ACH Payments</a>
+  <a href="instant.html">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html">Error Codes</a>
+  <div class="nav-section">On This Page</div>
+  <a href="#initiate">Initiate ACH Payment</a>
+  <a href="#batch">Submit ACH Batch</a>
+  <a href="#get-status">Get Payment Status</a>
+  <a href="#get-return">Get Return Details</a>
+  <a href="#reverse">Reverse a Payment</a>
+  <a href="#payment-object">ACH Payment Object</a>
+</nav>
+
+<main class="main">
+
+  <h1>ACH Payments</h1>
+  <p class="topic-meta">
+    <span>Rail: ACH (NACHA)</span>
+    <span>Processing: Batch (Standard + Same-Day)</span>
+    <span>Reversible: Yes (within 5 banking days)</span>
+  </p>
+
+  <p>
+    The ACH endpoint initiates ACH credit transfers (PPD, CCD, CTX) and direct debits. Payments are submitted to FedACH at the next applicable processing window. Use Same-Day ACH (<code>"processingSpeed": "same_day"</code>) for same-business-day settlement when urgency is required.
+  </p>
+
+  <div class="note">
+    <strong>ACH is Batch, Not Real-Time</strong>
+    ACH payments are not settled at the time of API response. A successful <code>201 Created</code> response means the payment has been accepted by PayPlus and queued for the next processing window. Settlement occurs at T+1 (standard) or same-day (SDA). Use webhooks to receive settlement confirmation.
+  </div>
+
+  <h2 id="initiate">Initiate an ACH Payment</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/ach</span>
+  </div>
+
+  <p>Creates a new ACH payment instruction. The payment enters the PayPlus workflow for validation, compliance screening, and approval before submission to the ACH network.</p>
+
+  <h3>Request Body Parameters</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>secCode</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>NACHA Standard Entry Class code. Accepted values: <code>PPD</code>, <code>CCD</code>, <code>CTX</code>, <code>WEB</code>, <code>TEL</code>, <code>IAT</code>.</td></tr>
+        <tr><td><code>transactionType</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Direction of fund movement: <code>credit</code> (push funds to beneficiary) or <code>debit</code> (pull funds from consumer — requires authorization).</td></tr>
+        <tr><td><code>amount</code></td><td>integer</td><td><span class="required-badge">Required</span></td><td>Payment amount in cents (USD). Example: <code>150000</code> = $1,500.00. Maximum: <code>100000000</code> ($1,000,000) for standard ACH.</td></tr>
+        <tr><td><code>effectiveDate</code></td><td>string (date)</td><td><span class="optional-badge">Optional</span></td><td>Requested effective entry date in <code>YYYY-MM-DD</code> format. If omitted, PayPlus uses the next available settlement date based on the processing window. Must be a business day.</td></tr>
+        <tr><td><code>processingSpeed</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Processing urgency: <code>standard</code> (default, T+1 settlement) or <code>same_day</code> (Same-Day ACH, requires SDA eligibility — see NACHA rules). SDA adds a $0.052 per-transaction fee.</td></tr>
+        <tr><td><code>originator</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Originating account details. See <em>Originator Object</em> below.</td></tr>
+        <tr><td><code>beneficiary</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Receiving account details. See <em>Beneficiary Object</em> below.</td></tr>
+        <tr><td><code>addenda</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Addenda record content (up to 80 characters for PPD/CCD; full structured addenda for CTX). Used for remittance information.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Your system's reference identifier for this payment. Stored in PayPlus and returned in all payment status responses and webhook events. Maximum 35 characters.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Originator Object</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>name</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Account holder name. Maximum 22 characters (NACHA field limit).</td></tr>
+        <tr><td><code>accountNumber</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>ODFI account number (your institution's originating account). Maximum 17 characters.</td></tr>
+        <tr><td><code>accountType</code></td><td>string</td><td><span class="required-badge">Required</span></td><td><code>checking</code> or <code>savings</code>.</td></tr>
+        <tr><td><code>routingNumber</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>ODFI ABA routing transit number. 9 digits.</td></tr>
+        <tr><td><code>id</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Company ID (for CCD/CTX). Appears in NACHA Batch Header record field 5.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Beneficiary Object</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>name</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Receiver name. Maximum 22 characters.</td></tr>
+        <tr><td><code>accountNumber</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Receiving account number at the RDFI. Maximum 17 characters.</td></tr>
+        <tr><td><code>accountType</code></td><td>string</td><td><span class="required-badge">Required</span></td><td><code>checking</code> or <code>savings</code>.</td></tr>
+        <tr><td><code>routingNumber</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>RDFI ABA routing transit number. 9 digits. Must be a valid, active ACH-participating institution.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Example Request</h3>
+  <pre><code>POST /v2/payments/ach HTTP/1.1
+Host: api.payplus.yourbank.internal
+Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
+Content-Type: application/json
+Idempotency-Key: f7a2b3c4-d5e6-7f8a-9b0c-d1e2f3a4b5c6
+
+{
+  "<span class="json-key">secCode</span>": "<span class="json-str">CCD</span>",
+  "<span class="json-key">transactionType</span>": "<span class="json-str">credit</span>",
+  "<span class="json-key">amount</span>": <span class="json-num">350000</span>,
+  "<span class="json-key">processingSpeed</span>": "<span class="json-str">same_day</span>",
+  "<span class="json-key">originator</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">FIRST NATIONAL BANK</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">100020003000</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">021000021</span>",
+    "<span class="json-key">id</span>": "<span class="json-str">1234567890</span>"
+  },
+  "<span class="json-key">beneficiary</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">ACME CORP</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">987654321</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">071000013</span>"
+  },
+  "<span class="json-key">addenda</span>": "<span class="json-str">INV-2026-03-001 PAYMENT</span>",
+  "<span class="json-key">referenceId</span>": "<span class="json-str">VENDOR-PMT-20260315-001</span>"
+}</code></pre>
+
+  <h3>Response</h3>
+  <p><strong><span class="status-2xx">201 Created</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_ach_a3k9f2m8x7p4r1q0</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">ach</span>",
+    "<span class="json-key">secCode</span>": "<span class="json-str">CCD</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">validated</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">350000</span>,
+    "<span class="json-key">processingSpeed</span>": "<span class="json-str">same_day</span>",
+    "<span class="json-key">effectiveDate</span>": "<span class="json-str">2026-03-15</span>",
+    "<span class="json-key">submissionWindow</span>": "<span class="json-str">SDA_WINDOW_2</span>",
+    "<span class="json-key">submissionCutoff</span>": "<span class="json-str">2026-03-15T14:30:00Z</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">VENDOR-PMT-20260315-001</span>",
+    "<span class="json-key">createdAt</span>": "<span class="json-str">2026-03-15T11:05:22Z</span>"
+  },
+  "<span class="json-key">meta</span>": { "<span class="json-key">requestId</span>": "<span class="json-str">req_9e7c4f2a1b3d</span>", "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T11:05:22Z</span>" }
+}</code></pre>
+
+  <h2 id="batch">Submit an ACH Batch</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/ach/batch</span>
+  </div>
+
+  <p>Submits a multi-record ACH batch (e.g., payroll) as a single API call. PayPlus generates the NACHA file. Maximum 50,000 records per batch submission.</p>
+
+  <h3>Request Body Parameters</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>batchName</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Descriptive batch name for operational tracking. Maximum 10 characters (appears in NACHA Company Entry Description).</td></tr>
+        <tr><td><code>secCode</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>SEC code for all records in the batch. All records in a NACHA batch must share the same SEC code.</td></tr>
+        <tr><td><code>processingSpeed</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td><code>standard</code> (default) or <code>same_day</code>. All records in the batch use the same processing speed.</td></tr>
+        <tr><td><code>effectiveDate</code></td><td>string (date)</td><td><span class="optional-badge">Optional</span></td><td>Requested effective date for all records. Must be a business day. If omitted, PayPlus assigns the next available settlement date.</td></tr>
+        <tr><td><code>originator</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>ODFI details applied to all records in the batch.</td></tr>
+        <tr><td><code>records</code></td><td>array</td><td><span class="required-badge">Required</span></td><td>Array of payment records. Each record contains: <code>transactionType</code>, <code>amount</code>, <code>beneficiary</code> (name, accountNumber, accountType, routingNumber), and optionally <code>addenda</code> and <code>referenceId</code>.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Your batch reference identifier. Stored in PayPlus and returned in batch status responses.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Example Request (truncated)</h3>
+  <pre><code>POST /v2/payments/ach/batch HTTP/1.1
+...
+
+{
+  "<span class="json-key">batchName</span>": "<span class="json-str">PAYROLL</span>",
+  "<span class="json-key">secCode</span>": "<span class="json-str">PPD</span>",
+  "<span class="json-key">processingSpeed</span>": "<span class="json-str">standard</span>",
+  "<span class="json-key">effectiveDate</span>": "<span class="json-str">2026-03-17</span>",
+  "<span class="json-key">originator</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">FIRST NATIONAL BANK</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">100020003000</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">021000021</span>",
+    "<span class="json-key">id</span>": "<span class="json-str">1234567890</span>"
+  },
+  "<span class="json-key">records</span>": [
+    {
+      "<span class="json-key">transactionType</span>": "<span class="json-str">credit</span>",
+      "<span class="json-key">amount</span>": <span class="json-num">225000</span>,
+      "<span class="json-key">beneficiary</span>": {
+        "<span class="json-key">name</span>": "<span class="json-str">JANE SMITH</span>",
+        "<span class="json-key">accountNumber</span>": "<span class="json-str">112233445</span>",
+        "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+        "<span class="json-key">routingNumber</span>": "<span class="json-str">071000013</span>"
+      },
+      "<span class="json-key">addenda</span>": "<span class="json-str">PAYROLL 2026-03-15</span>",
+      "<span class="json-key">referenceId</span>": "<span class="json-str">EMP-10042</span>"
+    }
+    <span class="json-comment">// ... additional records</span>
+  ],
+  "<span class="json-key">referenceId</span>": "<span class="json-str">PAYROLL-20260315</span>"
+}</code></pre>
+
+  <h3>Response</h3>
+  <p><strong><span class="status-2xx">202 Accepted</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">batchId</span>": "<span class="json-str">batch_ach_7c3d1f9e2b4a</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">processing</span>",
+    "<span class="json-key">recordCount</span>": <span class="json-num">842</span>,
+    "<span class="json-key">totalAmount</span>": <span class="json-num">198475200</span>,
+    "<span class="json-key">effectiveDate</span>": "<span class="json-str">2026-03-17</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">PAYROLL-20260315</span>",
+    "<span class="json-key">validationSummary</span>": {
+      "<span class="json-key">valid</span>": <span class="json-num">840</span>,
+      "<span class="json-key">invalid</span>": <span class="json-num">2</span>,
+      "<span class="json-key">invalidDetails</span>": [
+        { "<span class="json-key">recordIndex</span>": <span class="json-num">7</span>, "<span class="json-key">referenceId</span>": "<span class="json-str">EMP-10049</span>", "<span class="json-key">error</span>": "<span class="json-str">INVALID_ROUTING_NUMBER</span>" },
+        { "<span class="json-key">recordIndex</span>": <span class="json-num">412</span>, "<span class="json-key">referenceId</span>": "<span class="json-str">EMP-10461</span>", "<span class="json-key">error</span>": "<span class="json-str">ACCOUNT_NUMBER_TOO_LONG</span>" }
+      ]
+    }
+  }
+}</code></pre>
+
+  <h2 id="get-status">Get ACH Payment Status</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/ach/{paymentId}</span>
+  </div>
+
+  <p>Returns the current status and details of an ACH payment. Use the <code>paymentId</code> returned when the payment was created.</p>
+
+  <h3>Payment Status Values</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Status</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>validated</code></td><td>Passed format validation; awaiting approval or STP processing</td></tr>
+        <tr><td><code>pending_approval</code></td><td>Awaiting human approval in PayPlus workflow (dual-control configured)</td></tr>
+        <tr><td><code>compliance_hold</code></td><td>Flagged by OFAC screening; awaiting Compliance Officer review</td></tr>
+        <tr><td><code>approved</code></td><td>Approved; queued for next ACH processing window submission</td></tr>
+        <tr><td><code>submitted</code></td><td>NACHA file submitted to FedACH; awaiting settlement</td></tr>
+        <tr><td><code>settled</code></td><td>Settled; effective date passed and funds moved</td></tr>
+        <tr><td><code>returned</code></td><td>ACH return received from RDFI; see <code>returnCode</code> field</td></tr>
+        <tr><td><code>rejected</code></td><td>Rejected by PayPlus validation, compliance, or FedACH file rejection</td></tr>
+        <tr><td><code>reversed</code></td><td>Reversal submitted (reversal itself may still be pending settlement)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="get-return">Get Return Details</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/ach/{paymentId}/return</span>
+  </div>
+
+  <p>Returns ACH return details when a payment has <code>status: "returned"</code>. Returns <code>404</code> if the payment has not been returned.</p>
+
+  <h3>Example Response</h3>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_ach_a3k9f2m8x7p4r1q0</span>",
+    "<span class="json-key">returnCode</span>": "<span class="json-str">R01</span>",
+    "<span class="json-key">returnReason</span>": "<span class="json-str">Insufficient Funds</span>",
+    "<span class="json-key">returnSettlementDate</span>": "<span class="json-str">2026-03-17</span>",
+    "<span class="json-key">rdfiName</span>": "<span class="json-str">CHASE BANK NA</span>",
+    "<span class="json-key">rdfiRoutingNumber</span>": "<span class="json-str">071000013</span>",
+    "<span class="json-key">returnedAt</span>": "<span class="json-str">2026-03-16T22:15:00Z</span>",
+    "<span class="json-key">representmentEligible</span>": <span class="json-bool">true</span>,
+    "<span class="json-key">representmentDeadline</span>": "<span class="json-str">2026-09-12</span>"
+  }
+}</code></pre>
+
+  <h2 id="reverse">Reverse an ACH Payment</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/ach/{paymentId}/reverse</span>
+  </div>
+
+  <p>Initiates an ACH reversal for a settled payment. Reversals must be initiated within 5 banking days of the original payment's settlement date.</p>
+
+  <div class="important">
+    <strong>Reversal Eligibility Window</strong>
+    ACH reversals are not guaranteed to succeed — the RDFI is not obligated to accept a reversal if the funds have already been withdrawn by the receiver. Reversals are limited to: incorrect amount (only the difference may be reversed), duplicate entry, or incorrect account/routing number. Customer-initiated returns for authorized payments cannot use the reversal mechanism — file as a return exception instead.
+  </div>
+
+  <h3>Request Body</h3>
+  <pre><code>{
+  "<span class="json-key">reason</span>": "<span class="json-str">incorrect_amount</span>",
+  "<span class="json-key">reversalAmount</span>": <span class="json-num">350000</span>,
+  "<span class="json-key">reasonDetail</span>": "<span class="json-str">Original payment amount was $3,500.00 — should have been $1,500.00. Reversing full amount.</span>"
+}</code></pre>
+
+  <h2 id="payment-object">ACH Payment Object Reference</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>paymentId</code></td><td>string</td><td>Unique PayPlus payment identifier. Format: <code>pmt_ach_{16 chars}</code></td></tr>
+        <tr><td><code>rail</code></td><td>string</td><td>Always <code>"ach"</code></td></tr>
+        <tr><td><code>secCode</code></td><td>string</td><td>NACHA Standard Entry Class code</td></tr>
+        <tr><td><code>transactionType</code></td><td>string</td><td><code>"credit"</code> or <code>"debit"</code></td></tr>
+        <tr><td><code>status</code></td><td>string</td><td>Current payment status (see status values above)</td></tr>
+        <tr><td><code>amount</code></td><td>integer</td><td>Amount in cents (USD)</td></tr>
+        <tr><td><code>effectiveDate</code></td><td>string</td><td>Requested effective entry date (YYYY-MM-DD)</td></tr>
+        <tr><td><code>processingSpeed</code></td><td>string</td><td><code>"standard"</code> or <code>"same_day"</code></td></tr>
+        <tr><td><code>submissionWindow</code></td><td>string</td><td>ACH processing window used: <code>STANDARD</code>, <code>SDA_WINDOW_1</code>, <code>SDA_WINDOW_2</code>, <code>SDA_WINDOW_3</code></td></tr>
+        <tr><td><code>traceNumber</code></td><td>string</td><td>NACHA trace number assigned at submission. Available after <code>status = "submitted"</code>.</td></tr>
+        <tr><td><code>returnCode</code></td><td>string</td><td>ACH return code (R01–R85). Present only when <code>status = "returned"</code>.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td>Your system's reference identifier</td></tr>
+        <tr><td><code>createdAt</code></td><td>string</td><td>ISO 8601 timestamp of payment creation</td></tr>
+        <tr><td><code>updatedAt</code></td><td>string</td><td>ISO 8601 timestamp of last status update</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-nav">
+    <a href="index.html">← Overview</a>
+    <a href="instant.html">Next: Instant Payments →</a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · ACH Payments · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>

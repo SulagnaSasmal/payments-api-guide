@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PayPlus REST API — Developer Reference</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a></div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html" class="active">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <a href="index.html#rate-limiting">Rate Limiting</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html">ACH Payments</a>
+  <a href="instant.html">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html">Error Codes</a>
+</nav>
+
+<main class="main">
+
+  <h1>PayPlus REST API</h1>
+  <p class="topic-meta">
+    <span>API Version: v2.1</span>
+    <span>Base URL: <code>https://api.payplus.yourbank.internal/v2</code></span>
+    <span>Last updated: March 2026</span>
+  </p>
+
+  <p>
+    The PayPlus REST API enables your applications to initiate, monitor, and manage payments across all supported US payment rails — ACH, Fedwire, SWIFT, RTP, and FedNow — through a single, unified interface. The API abstracts the complexity of individual rail message formats and handles compliance screening, approval workflow, and network submission on your behalf.
+  </p>
+
+  <div class="section-grid">
+    <a class="section-card" href="ach.html">
+      <div class="section-card-title">/payments/ach</div>
+      <div class="section-card-desc">Initiate ACH credits and debits, submit batch files, retrieve return details, and process reversals</div>
+    </a>
+    <a class="section-card" href="instant.html">
+      <div class="section-card-title">/payments/instant</div>
+      <div class="section-card-desc">Initiate real-time credit transfers via RTP (TCH) or FedNow; send Request for Payment (RfP)</div>
+    </a>
+    <a class="section-card" href="wire.html">
+      <div class="section-card-title">/payments/wire</div>
+      <div class="section-card-desc">Initiate Fedwire and SWIFT transfers; request payment recall; track settlement status</div>
+    </a>
+    <a class="section-card" href="webhooks.html">
+      <div class="section-card-title">/webhooks</div>
+      <div class="section-card-desc">Subscribe to real-time payment events: approved, settled, returned, compliance hold</div>
+    </a>
+  </div>
+
+  <h2 id="authentication">Authentication</h2>
+  <p>
+    All API requests require authentication. PayPlus supports two authentication methods:
+  </p>
+
+  <h3>OAuth 2.0 Client Credentials (Recommended)</h3>
+  <p>
+    For server-to-server API integrations, use OAuth 2.0 Client Credentials grant. Your application authenticates as a PayPlus API Integration User using a client ID and client secret.
+  </p>
+
+  <h4>Step 1 — Obtain an access token</h4>
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/auth/token</span>
+  </div>
+  <pre><code>POST /auth/token HTTP/1.1
+Host: api.payplus.yourbank.internal
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&amp;client_id=your_client_id
+&amp;client_secret=your_client_secret
+&amp;scope=payments:write payments:read</code></pre>
+
+  <p><strong>Response:</strong></p>
+  <pre><code>{
+  "<span class="json-key">access_token</span>": "<span class="json-str">eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...</span>",
+  "<span class="json-key">token_type</span>": "<span class="json-str">Bearer</span>",
+  "<span class="json-key">expires_in</span>": <span class="json-num">3600</span>,
+  "<span class="json-key">scope</span>": "<span class="json-str">payments:write payments:read</span>"
+}</code></pre>
+
+  <h4>Step 2 — Include the token in API requests</h4>
+  <pre><code>Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...</code></pre>
+
+  <p>Access tokens expire after 3600 seconds (1 hour). Implement token refresh logic in your integration — do not cache tokens indefinitely.</p>
+
+  <h3>API Key Authentication</h3>
+  <p>For simpler integrations or test environments, API key authentication is available. Generate API keys in the PayPlus Admin Console at <strong>Administration &gt; API &gt; API Keys</strong>.</p>
+  <pre><code>X-API-Key: pp_live_a3k9f2m8x7p...</code></pre>
+
+  <div class="warning">
+    <strong>API Key Security</strong>
+    Never expose API keys in client-side code (JavaScript, mobile apps). API keys should only be used in server-side code where they cannot be extracted by end users. For all production integrations handling real payments, OAuth 2.0 is strongly recommended over API key authentication.
+  </div>
+
+  <h3>Available Scopes</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scope</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>payments:write</code></td><td>Initiate payments across all rails. Required for POST endpoints.</td></tr>
+        <tr><td><code>payments:read</code></td><td>Retrieve payment status, history, and details. Required for GET endpoints.</td></tr>
+        <tr><td><code>payments:ach</code></td><td>ACH-specific access. Include in addition to <code>payments:write</code>/<code>payments:read</code> to restrict a client to ACH only.</td></tr>
+        <tr><td><code>payments:instant</code></td><td>Instant payment (RTP/FedNow) specific access.</td></tr>
+        <tr><td><code>payments:wire</code></td><td>Wire transfer (Fedwire/SWIFT) specific access.</td></tr>
+        <tr><td><code>webhooks:manage</code></td><td>Create, update, and delete webhook subscriptions.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="request-format">Requests and Responses</h2>
+
+  <h3>Request Format</h3>
+  <ul>
+    <li>All request and response bodies are <strong>JSON</strong> (<code>Content-Type: application/json</code>).</li>
+    <li>All timestamps are <strong>ISO 8601 / RFC 3339</strong> format in UTC: <code>2026-03-15T14:30:00Z</code></li>
+    <li>All monetary amounts are <strong>integers in cents</strong> (USD). Example: $1,250.00 = <code>125000</code>. This avoids floating-point precision issues.</li>
+    <li>ABA routing numbers, account numbers, and BIC codes are strings to preserve leading zeros.</li>
+  </ul>
+
+  <h3>Response Envelope</h3>
+  <p>All successful responses return an object with a <code>data</code> field containing the resource. Error responses use the <code>error</code> field instead.</p>
+
+  <pre><code><span class="json-comment">// Success response</span>
+{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_a3k9f2m8x7p4r1q0</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">submitted</span>",
+    ...
+  },
+  "<span class="json-key">meta</span>": {
+    "<span class="json-key">requestId</span>": "<span class="json-str">req_7f3b2d1a9e4c</span>",
+    "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T14:30:05Z</span>"
+  }
+}
+
+<span class="json-comment">// Error response</span>
+{
+  "<span class="json-key">error</span>": {
+    "<span class="json-key">code</span>": "<span class="json-str">INVALID_ROUTING_NUMBER</span>",
+    "<span class="json-key">message</span>": "<span class="json-str">The provided routing number '099999999' is not valid.</span>",
+    "<span class="json-key">field</span>": "<span class="json-str">beneficiary.routingNumber</span>"
+  },
+  "<span class="json-key">meta</span>": {
+    "<span class="json-key">requestId</span>": "<span class="json-str">req_7f3b2d1a9e4c</span>",
+    "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T14:30:05Z</span>"
+  }
+}</code></pre>
+
+  <h3>Idempotency</h3>
+  <p>
+    All payment initiation endpoints (<code>POST</code>) support idempotency keys. Include the <code>Idempotency-Key</code> header with a unique value (UUID v4) to safely retry failed requests without risk of creating duplicate payments.
+  </p>
+  <pre><code>Idempotency-Key: a3b9f2d1-4e7c-8f0a-b3d5-1e9c7a2f4b08</code></pre>
+  <p>
+    If a request with the same idempotency key is received within 24 hours, PayPlus returns the original response without creating a new payment. Idempotency keys expire after 24 hours.
+  </p>
+
+  <h2 id="environments">Environments</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Environment</th><th>Base URL</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Production</strong></td>
+          <td><code>https://api.payplus.yourbank.internal/v2</code></td>
+          <td>Processes real payments. Requires production credentials. Access restricted to authorized application servers.</td>
+        </tr>
+        <tr>
+          <td><strong>UAT / Staging</strong></td>
+          <td><code>https://api-uat.payplus.yourbank.internal/v2</code></td>
+          <td>Connected to FedACH test environment, TCH RTP certification environment, and Fedwire test environment. Uses test credentials — no real money moves.</td>
+        </tr>
+        <tr>
+          <td><strong>Sandbox</strong></td>
+          <td><code>https://api-sandbox.payplus.yourbank.internal/v2</code></td>
+          <td>Fully simulated environment. No connection to payment networks. Instant responses for all payment types. Ideal for rapid integration development.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="rate-limiting">Rate Limiting</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Limit</th><th>Value</th><th>Scope</th></tr></thead>
+      <tbody>
+        <tr><td>Default request rate</td><td>120 requests per minute</td><td>Per API client (client_id)</td></tr>
+        <tr><td>Burst allowance</td><td>Up to 200 requests per minute for up to 30 seconds</td><td>Per API client</td></tr>
+        <tr><td>Payment initiation</td><td>60 POST requests per minute</td><td>Per API client (sub-limit of default)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Rate limit status is returned in response headers:</p>
+  <pre><code>X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1742039460    <span class="json-comment">// Unix timestamp when limit resets</span></code></pre>
+  <p>When the rate limit is exceeded, the API returns <code>429 Too Many Requests</code>. Implement exponential backoff in your retry logic.</p>
+
+  <h2 id="versioning">API Versioning</h2>
+  <p>
+    The API version is included in the URL path (<code>/v2/</code>). Breaking changes are introduced in new major versions. Minor versions (v2.1, v2.2) add new fields and endpoints without removing or changing existing ones — existing integrations continue to work without modification.
+  </p>
+  <p>
+    The current version is <strong>v2.1</strong>. Version v1 is deprecated and will be retired on <strong>December 31, 2026</strong>. Migrate v1 integrations to v2 before that date.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · Developer Reference · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>

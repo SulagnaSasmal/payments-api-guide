@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instant Payments — PayPlus REST API</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a> › Instant Payments</div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <a href="index.html#rate-limiting">Rate Limiting</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html">ACH Payments</a>
+  <a href="instant.html" class="active">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html">Error Codes</a>
+  <div class="nav-section">On This Page</div>
+  <a href="#overview">Overview</a>
+  <a href="#initiate">Initiate Instant Payment</a>
+  <a href="#get-status">Get Payment Status</a>
+  <a href="#rfp">Request for Payment (RfP)</a>
+  <a href="#get-rfp">Get RfP Status</a>
+  <a href="#rail-selection">Rail Selection Logic</a>
+</nav>
+
+<main class="main">
+
+  <h1>Instant Payments (RTP / FedNow)</h1>
+  <p class="topic-meta">
+    <span>Rails: RTP (TCH) · FedNow (Federal Reserve)</span>
+    <span>Settlement: Real-time (seconds)</span>
+    <span>Reversible: No — irrevocable upon acceptance</span>
+  </p>
+
+  <p>
+    The instant payments endpoint initiates real-time credit transfers via RTP (The Clearing House) or FedNow (Federal Reserve), 24 hours a day, 7 days a week. PayPlus automatically selects the appropriate rail based on the receiving bank's network participation, or you can specify a rail preference explicitly.
+  </p>
+
+  <div class="important">
+    <strong>Irrevocability — Design Your Integration Accordingly</strong>
+    Instant payments are irrevocable once accepted by the receiving bank. There is no reversal mechanism. If a customer initiates a payment in error, they must contact the beneficiary directly to request a voluntary return. Build confirmation steps into your user flow — never initiate an instant payment without explicit user confirmation of the beneficiary and amount.
+  </div>
+
+  <h2 id="overview">Rail Behavior</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Attribute</th><th>RTP (TCH)</th><th>FedNow</th></tr></thead>
+      <tbody>
+        <tr><td>Max transaction amount</td><td><code>100000000</code> ($1,000,000)</td><td><code>50000000</code> ($500,000) default; <code>100000000</code> for eligible participants</td></tr>
+        <tr><td>Settlement</td><td>TCH joint account at FRBNY</td><td>Fed master account (direct)</td></tr>
+        <tr><td>Operating hours</td><td>24/7/365</td><td>24/7/365</td></tr>
+        <tr><td>Expected response time</td><td>&lt; 10 seconds</td><td>&lt; 20 seconds</td></tr>
+        <tr><td>Request for Payment</td><td>Yes (<code>rail: "rtp"</code>)</td><td>Yes (<code>rail: "fednow"</code>)</td></tr>
+        <tr><td>NSF returns</td><td>No — payment accepted regardless of receiver balance</td><td>No — same as RTP</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="initiate">Initiate an Instant Payment</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/instant</span>
+  </div>
+
+  <p>Creates a real-time credit transfer. PayPlus performs OFAC screening, submits to the selected rail, and returns a final status (settled or failed) synchronously in the API response — typically within 10–20 seconds.</p>
+
+  <div class="note">
+    <strong>Synchronous Response</strong>
+    Unlike ACH (which returns immediately with a <code>validated</code> status), the instant payment endpoint is synchronous — it holds the HTTP connection open until the payment is settled or has failed. Your HTTP client must have a timeout of at least 60 seconds for instant payment requests.
+  </div>
+
+  <h3>Request Body Parameters</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>amount</code></td><td>integer</td><td><span class="required-badge">Required</span></td><td>Amount in cents (USD). Cannot exceed the rail maximum for the selected or auto-selected rail.</td></tr>
+        <tr><td><code>railPreference</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Preferred rail: <code>"rtp"</code>, <code>"fednow"</code>, or <code>"auto"</code> (default). When <code>"auto"</code>, PayPlus applies the configured rail selection logic (see Rail Selection below).</td></tr>
+        <tr><td><code>originator</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Sending account. Fields: <code>name</code>, <code>accountNumber</code>, <code>accountType</code>, <code>routingNumber</code>, <code>address</code> (street, city, state, postalCode — required for BSA compliance).</td></tr>
+        <tr><td><code>beneficiary</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Receiving account. Fields: <code>name</code>, <code>accountNumber</code>, <code>accountType</code>, <code>routingNumber</code>, <code>address</code>.</td></tr>
+        <tr><td><code>remittanceInfo</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Unstructured remittance information for the beneficiary. Passed in the pacs.008 <code>RmtInf</code> field. Maximum 140 characters.</td></tr>
+        <tr><td><code>purposeCode</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>ISO 20022 payment purpose code (e.g., <code>SALA</code> for salary, <code>RENT</code> for rent payment). Passed in pacs.008 <code>Purp</code> field.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Your system's reference identifier. Maximum 35 characters.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Example Request</h3>
+  <pre><code>POST /v2/payments/instant HTTP/1.1
+Host: api.payplus.yourbank.internal
+Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
+Content-Type: application/json
+Idempotency-Key: 9b3c1d7e-2f4a-5b6c-8d9e-0f1a2b3c4d5e
+
+{
+  "<span class="json-key">amount</span>": <span class="json-num">50000</span>,
+  "<span class="json-key">railPreference</span>": "<span class="json-str">auto</span>",
+  "<span class="json-key">originator</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">John Doe</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">778899001122</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">021000021</span>",
+    "<span class="json-key">address</span>": {
+      "<span class="json-key">street</span>": "<span class="json-str">123 Main St</span>",
+      "<span class="json-key">city</span>": "<span class="json-str">New York</span>",
+      "<span class="json-key">state</span>": "<span class="json-str">NY</span>",
+      "<span class="json-key">postalCode</span>": "<span class="json-str">10001</span>"
+    }
+  },
+  "<span class="json-key">beneficiary</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">Jane Smith</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">112233445566</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">071000013</span>",
+    "<span class="json-key">address</span>": {
+      "<span class="json-key">street</span>": "<span class="json-str">456 Oak Ave</span>",
+      "<span class="json-key">city</span>": "<span class="json-str">Chicago</span>",
+      "<span class="json-key">state</span>": "<span class="json-str">IL</span>",
+      "<span class="json-key">postalCode</span>": "<span class="json-str">60601</span>"
+    }
+  },
+  "<span class="json-key">remittanceInfo</span>": "<span class="json-str">Rent payment March 2026</span>",
+  "<span class="json-key">purposeCode</span>": "<span class="json-str">RENT</span>",
+  "<span class="json-key">referenceId</span>": "<span class="json-str">RENT-MAR2026-JD</span>"
+}</code></pre>
+
+  <h3>Response — Settled</h3>
+  <p><strong><span class="status-2xx">200 OK</span></strong> (synchronous — response returned after settlement confirmation)</p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_inst_b9c3d1f7e2a4</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">fednow</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">settled</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">50000</span>,
+    "<span class="json-key">uetr</span>": "<span class="json-str">4a7f2b9c-3d1e-5f6a-8b9c-0d1e2f3a4b5c</span>",
+    "<span class="json-key">settlementTimestamp</span>": "<span class="json-str">2026-03-15T14:30:07Z</span>",
+    "<span class="json-key">processingTimeMs</span>": <span class="json-num">5823</span>,
+    "<span class="json-key">referenceId</span>": "<span class="json-str">RENT-MAR2026-JD</span>",
+    "<span class="json-key">createdAt</span>": "<span class="json-str">2026-03-15T14:30:01Z</span>"
+  }
+}</code></pre>
+
+  <h3>Response — Failed (Receiving Bank Return)</h3>
+  <p><strong><span class="status-2xx">200 OK</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_inst_b9c3d1f7e2a4</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">rtp</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">returned</span>",
+    "<span class="json-key">returnCode</span>": "<span class="json-str">AC04</span>",
+    "<span class="json-key">returnReason</span>": "<span class="json-str">Closed Account</span>",
+    "<span class="json-key">processingTimeMs</span>": <span class="json-num">8102</span>
+  }
+}</code></pre>
+
+  <h2 id="get-status">Get Instant Payment Status</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/instant/{paymentId}</span>
+  </div>
+
+  <p>Retrieves the current status of an instant payment. Because the <code>POST /instant</code> endpoint is synchronous, you typically have final status already in the initiation response. Use this endpoint for status reconciliation or if the initiation request timed out.</p>
+
+  <h2 id="rfp">Send a Request for Payment (RfP)</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/rfp</span>
+  </div>
+
+  <p>Sends a Request for Payment to another bank's customer. The recipient reviews the request and, if approved, initiates an RTP or FedNow credit transfer to fulfill it. The payer always controls the final payment decision — this is not a pull/debit mechanism.</p>
+
+  <h3>Request Body Parameters</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>rail</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Rail for the RfP message: <code>"rtp"</code> or <code>"fednow"</code>. The payer's bank must participate in the specified rail.</td></tr>
+        <tr><td><code>amount</code></td><td>integer</td><td><span class="required-badge">Required</span></td><td>Requested payment amount in cents (USD).</td></tr>
+        <tr><td><code>dueDate</code></td><td>string (date)</td><td><span class="optional-badge">Optional</span></td><td>Payment due date in YYYY-MM-DD format. Informational — not enforced by the network.</td></tr>
+        <tr><td><code>payee</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Your account details (the party requesting payment). Fields: <code>name</code>, <code>accountNumber</code>, <code>accountType</code>, <code>routingNumber</code>.</td></tr>
+        <tr><td><code>payer</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>The party being asked to pay. Fields: <code>name</code>, <code>accountNumber</code>, <code>accountType</code>, <code>routingNumber</code> (payer's bank).</td></tr>
+        <tr><td><code>description</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Payment description shown to the payer. Maximum 140 characters.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Your reference for this RfP (invoice number, etc.). Maximum 35 characters.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Example Request</h3>
+  <pre><code>POST /v2/payments/rfp HTTP/1.1
+...
+
+{
+  "<span class="json-key">rail</span>": "<span class="json-str">fednow</span>",
+  "<span class="json-key">amount</span>": <span class="json-num">125000</span>,
+  "<span class="json-key">dueDate</span>": "<span class="json-str">2026-03-20</span>",
+  "<span class="json-key">payee</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">ACME CORP</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">100020003000</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">021000021</span>"
+  },
+  "<span class="json-key">payer</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">GLOBEX INDUSTRIES LLC</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">987654321</span>",
+    "<span class="json-key">accountType</span>": "<span class="json-str">checking</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">071000013</span>"
+  },
+  "<span class="json-key">description</span>": "<span class="json-str">Invoice INV-2026-0042 — Software services March 2026</span>",
+  "<span class="json-key">referenceId</span>": "<span class="json-str">INV-2026-0042</span>"
+}</code></pre>
+
+  <h3>Response</h3>
+  <p><strong><span class="status-2xx">202 Accepted</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">rfpId</span>": "<span class="json-str">rfp_fn_7a3b9c1d2e4f</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">fednow</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">sent</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">125000</span>,
+    "<span class="json-key">dueDate</span>": "<span class="json-str">2026-03-20</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">INV-2026-0042</span>",
+    "<span class="json-key">sentAt</span>": "<span class="json-str">2026-03-15T09:00:00Z</span>",
+    "<span class="json-key">expiresAt</span>": "<span class="json-str">2026-03-20T23:59:59Z</span>"
+  }
+}</code></pre>
+
+  <h2 id="get-rfp">Get RfP Status</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/rfp/{rfpId}</span>
+  </div>
+
+  <p>Returns the current status of a Request for Payment. Subscribe to the <code>rfp.fulfilled</code> webhook event to receive real-time notification when the payer completes the payment.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>RfP Status</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>sent</code></td><td>RfP delivered to payer's bank; awaiting payer action</td></tr>
+        <tr><td><code>fulfilled</code></td><td>Payer approved and payment has settled. <code>fulfillingPaymentId</code> field contains the instant payment ID.</td></tr>
+        <tr><td><code>declined</code></td><td>Payer explicitly declined the request</td></tr>
+        <tr><td><code>expired</code></td><td>RfP expired without payer action (past <code>dueDate</code> or 30 days, whichever is earlier)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="rail-selection">Rail Selection Logic</h2>
+  <p>When <code>railPreference: "auto"</code>, PayPlus applies the following logic to select the best available rail:</p>
+
+  <pre><code><span class="json-comment">// Simplified PayPlus rail selection pseudocode</span>
+if amount &gt; 1_000_000:
+    → route to Fedwire (instant rails do not support this amount)
+
+if receivingBank participates in FedNow AND amount &lt;= fednow_limit:
+    → route to FedNow (preferred: direct Fed settlement, no prefunded balance risk)
+
+elif receivingBank participates in RTP AND amount &lt;= 1_000_000:
+    → route to RTP
+
+else:
+    → return error INSTANT_RAIL_NOT_AVAILABLE
+    → suggest routing to ACH or Fedwire instead</code></pre>
+
+  <p>Configure custom rail selection rules in the PayPlus Admin Console at <strong>Administration &gt; Workflow &gt; Rail Selection Rules</strong> to override this default logic for specific scenarios (e.g., always prefer RTP for corporate accounts, always prefer FedNow for retail).</p>
+
+  <div class="doc-nav">
+    <a href="ach.html">← ACH Payments</a>
+    <a href="wire.html">Next: Wire Transfers →</a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · Instant Payments · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>

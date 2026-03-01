@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Codes — PayPlus REST API</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a> › Error Codes</div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html">ACH Payments</a>
+  <a href="instant.html">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html" class="active">Error Codes</a>
+  <div class="nav-section">On This Page</div>
+  <a href="#http-codes">HTTP Status Codes</a>
+  <a href="#error-format">Error Response Format</a>
+  <a href="#validation-errors">Validation Errors</a>
+  <a href="#auth-errors">Authentication Errors</a>
+  <a href="#payment-errors">Payment Errors</a>
+  <a href="#rail-errors">Rail-Specific Errors</a>
+  <a href="#compliance-errors">Compliance Errors</a>
+</nav>
+
+<main class="main">
+
+  <h1>Error Codes</h1>
+  <p class="topic-meta">
+    <span>Applies to: PayPlus REST API v2.1</span>
+    <span>Last updated: March 2026</span>
+  </p>
+
+  <p>
+    This page documents all error codes returned by the PayPlus REST API. Errors are returned as JSON objects in the <code>error</code> field of the response envelope. Use the <code>code</code> field to identify and handle specific error conditions programmatically.
+  </p>
+
+  <h2 id="http-codes">HTTP Status Codes</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>HTTP Status</th><th>Meaning</th><th>Typical Cause</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="status-2xx">200 OK</span></td>
+          <td>Request succeeded</td>
+          <td>Used for synchronous operations that return data (GET requests; synchronous instant payment initiation)</td>
+        </tr>
+        <tr>
+          <td><span class="status-2xx">201 Created</span></td>
+          <td>Resource created successfully</td>
+          <td>ACH payment initiated; webhook registered</td>
+        </tr>
+        <tr>
+          <td><span class="status-2xx">202 Accepted</span></td>
+          <td>Request accepted for asynchronous processing</td>
+          <td>Wire transfer accepted (settlement via webhook); RfP sent; ACH batch submitted</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">400 Bad Request</span></td>
+          <td>Invalid request format or parameters</td>
+          <td>Missing required field, invalid field value, malformed JSON, invalid routing number</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">401 Unauthorized</span></td>
+          <td>Authentication failed or missing</td>
+          <td>Missing Authorization header, expired access token, invalid API key</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">403 Forbidden</span></td>
+          <td>Authenticated but not authorized</td>
+          <td>OAuth scope does not permit the requested operation; API client restricted from the specified rail</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">404 Not Found</span></td>
+          <td>Resource not found</td>
+          <td>Payment ID does not exist; return details requested for a payment that has not been returned</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">409 Conflict</span></td>
+          <td>Duplicate request conflict</td>
+          <td>Same idempotency key used with different request parameters</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">422 Unprocessable Entity</span></td>
+          <td>Business rule validation failed</td>
+          <td>Payment exceeds rail limit, SDA payment above $1M, effective date is not a business day</td>
+        </tr>
+        <tr>
+          <td><span class="status-4xx">429 Too Many Requests</span></td>
+          <td>Rate limit exceeded</td>
+          <td>More than 120 requests per minute from the same API client</td>
+        </tr>
+        <tr>
+          <td><span class="status-5xx">500 Internal Server Error</span></td>
+          <td>PayPlus internal error</td>
+          <td>Unexpected server error. Retry with exponential backoff. If persistent, contact PayPlus support with the <code>requestId</code>.</td>
+        </tr>
+        <tr>
+          <td><span class="status-5xx">503 Service Unavailable</span></td>
+          <td>PayPlus temporarily unavailable</td>
+          <td>System maintenance or overload. Retry after the <code>Retry-After</code> header value (seconds).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="error-format">Error Response Format</h2>
+
+  <pre><code>{
+  "<span class="json-key">error</span>": {
+    "<span class="json-key">code</span>": "<span class="json-str">INVALID_ROUTING_NUMBER</span>",       <span class="json-comment">// Machine-readable error code</span>
+    "<span class="json-key">message</span>": "<span class="json-str">The routing number '099999999' is not a valid ABA routing number.</span>",
+    "<span class="json-key">field</span>": "<span class="json-str">beneficiary.routingNumber</span>",       <span class="json-comment">// Field path (for validation errors)</span>
+    "<span class="json-key">details</span>": {}                               <span class="json-comment">// Additional context (not always present)</span>
+  },
+  "<span class="json-key">meta</span>": {
+    "<span class="json-key">requestId</span>": "<span class="json-str">req_9e7c4f2a1b3d</span>",               <span class="json-comment">// Include in support requests</span>
+    "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T11:05:22Z</span>"
+  }
+}</code></pre>
+
+  <p>For validation errors affecting multiple fields, the response returns an array of errors:</p>
+  <pre><code>{
+  "<span class="json-key">errors</span>": [
+    { "<span class="json-key">code</span>": "<span class="json-str">REQUIRED_FIELD_MISSING</span>", "<span class="json-key">field</span>": "<span class="json-str">originator.accountNumber</span>", "<span class="json-key">message</span>": "<span class="json-str">originator.accountNumber is required.</span>" },
+    { "<span class="json-key">code</span>": "<span class="json-str">INVALID_AMOUNT</span>", "<span class="json-key">field</span>": "<span class="json-str">amount</span>", "<span class="json-key">message</span>": "<span class="json-str">Amount must be a positive integer (cents). Received: -5000.</span>" }
+  ],
+  "<span class="json-key">meta</span>": { "<span class="json-key">requestId</span>": "<span class="json-str">req_9e7c4f2a1b3d</span>", "<span class="json-key">timestamp</span>": "<span class="json-str">2026-03-15T11:05:22Z</span>" }
+}</code></pre>
+
+  <h2 id="validation-errors">Validation Errors (400)</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Description</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td><code>REQUIRED_FIELD_MISSING</code></td><td>A required field is absent from the request body.</td><td>Check the <code>field</code> value in the error response. Add the missing field to the request.</td></tr>
+        <tr><td><code>INVALID_FIELD_FORMAT</code></td><td>A field value does not conform to the expected format.</td><td>Review the field specification in this documentation. Common causes: date not in YYYY-MM-DD format, currency code not ISO 4217.</td></tr>
+        <tr><td><code>INVALID_ROUTING_NUMBER</code></td><td>The provided ABA routing transit number is not a valid 9-digit ABA number or is not registered as an active ACH/Fedwire participant.</td><td>Verify the routing number against the Federal Reserve's E-Payments Routing Directory. Ensure no leading/trailing spaces in the string value.</td></tr>
+        <tr><td><code>INVALID_BIC</code></td><td>The provided BIC (Bank Identifier Code) is not a valid SWIFT BIC or is not active in the SWIFT BIC directory.</td><td>Verify the BIC is 8 or 11 characters. Check that the BIC is registered and active in the SWIFT BIC Plus directory.</td></tr>
+        <tr><td><code>INVALID_AMOUNT</code></td><td>Amount is not a positive integer, is zero, or exceeds the maximum value for the data type.</td><td>Amount must be a positive integer in cents (USD). Example: $1,500.00 = <code>150000</code>. Do not send decimal values.</td></tr>
+        <tr><td><code>INVALID_SEC_CODE</code></td><td>The provided NACHA SEC code is not recognized or is not enabled for this PayPlus instance.</td><td>Verify the SEC code is one of the supported values: PPD, CCD, CTX, WEB, TEL, IAT. Contact your PayPlus administrator if the SEC code should be supported but is not enabled.</td></tr>
+        <tr><td><code>INVALID_CURRENCY</code></td><td>The currency code is not a valid ISO 4217 three-letter code or is not supported by the target rail.</td><td>Fedwire only supports USD. SWIFT supports the currencies enabled in your SWIFT connector configuration.</td></tr>
+        <tr><td><code>FIELD_TOO_LONG</code></td><td>A string field exceeds the maximum allowed length.</td><td>Truncate the field value. The error message includes the maximum length for the field.</td></tr>
+        <tr><td><code>INVALID_DATE</code></td><td>A date field is not a valid calendar date, is not a business day, or is outside the allowed date range.</td><td>Verify the date is a valid business day in YYYY-MM-DD format. ACH effective dates must be today or a future business day. Fedwire does not support future value dates.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="auth-errors">Authentication and Authorization Errors (401 / 403)</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>HTTP</th><th>Description</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td><code>MISSING_AUTHORIZATION</code></td><td><span class="status-4xx">401</span></td><td>No Authorization header or X-API-Key header provided.</td><td>Add the Authorization header: <code>Authorization: Bearer {access_token}</code> or <code>X-API-Key: {key}</code>.</td></tr>
+        <tr><td><code>INVALID_TOKEN</code></td><td><span class="status-4xx">401</span></td><td>Access token is malformed, expired, or has been revoked.</td><td>Request a new access token via <code>POST /auth/token</code>.</td></tr>
+        <tr><td><code>INVALID_API_KEY</code></td><td><span class="status-4xx">401</span></td><td>The provided API key is invalid or has been deactivated.</td><td>Verify the API key is correct and active in the PayPlus Admin Console.</td></tr>
+        <tr><td><code>INSUFFICIENT_SCOPE</code></td><td><span class="status-4xx">403</span></td><td>The access token does not include the required OAuth scope for this operation.</td><td>Request a new token with the required scope. See the <a href="index.html#authentication">Authentication</a> section for scope definitions.</td></tr>
+        <tr><td><code>RAIL_ACCESS_DENIED</code></td><td><span class="status-4xx">403</span></td><td>This API client is not authorized to initiate payments on the requested rail.</td><td>Contact your PayPlus administrator to enable the required rail for this API client.</td></tr>
+        <tr><td><code>AMOUNT_LIMIT_EXCEEDED</code></td><td><span class="status-4xx">403</span></td><td>The payment amount exceeds the limit configured for this API client or the originating account.</td><td>The per-transaction or daily limit for this client has been reached. Contact your PayPlus administrator to review limit configuration.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="payment-errors">Payment Business Rule Errors (422)</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Description</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td><code>RAIL_LIMIT_EXCEEDED</code></td><td>Payment amount exceeds the maximum transaction limit for the requested rail.</td><td>Use a different rail or split into multiple payments. Fedwire has no enforced maximum; RTP limit is $1,000,000; FedNow default limit is $500,000.</td></tr>
+        <tr><td><code>INSTANT_RAIL_NOT_AVAILABLE</code></td><td>Neither RTP nor FedNow is available for the specified receiving bank routing number.</td><td>Verify the receiving bank's instant payment participation. Route to ACH or Fedwire as an alternative.</td></tr>
+        <tr><td><code>SDA_NOT_ELIGIBLE</code></td><td>The payment is not eligible for Same-Day ACH processing.</td><td>Common causes: amount exceeds $1,000,000 (SDA limit), IAT SEC code (not SDA eligible), submission received after the final SDA window cut-off. Use standard ACH processing.</td></tr>
+        <tr><td><code>FEDWIRE_OUTSIDE_HOURS</code></td><td>Fedwire wire transfer submitted outside Fedwire operating hours (Monday–Friday, 9:00 PM ET prior day to 6:30 PM ET).</td><td>The payment will be queued and submitted at the next Fedwire opening. No action required — the payment will proceed automatically. Subscribe to the <code>payment.submitted</code> webhook to confirm submission.</td></tr>
+        <tr><td><code>TRAVEL_RULE_FIELDS_MISSING</code></td><td>Payment meets the BSA Travel Rule threshold ($3,000+) but required originator or beneficiary address fields are missing.</td><td>Add complete address information (<code>street</code>, <code>city</code>, <code>state</code>, <code>postalCode</code>, <code>country</code>) for both originator and beneficiary.</td></tr>
+        <tr><td><code>REVERSAL_WINDOW_EXPIRED</code></td><td>ACH reversal request submitted more than 5 banking days after the original payment's settlement date.</td><td>The reversal window has passed. Contact the beneficiary bank directly to arrange a voluntary return.</td></tr>
+        <tr><td><code>PAYMENT_NOT_REVERSIBLE</code></td><td>Reversal requested for a payment that is not in a reversible state (e.g., already returned, rejected, or a debit entry type not eligible for reversal).</td><td>Review the payment status. Reversal is only available for settled credit entries within the 5-day window.</td></tr>
+        <tr><td><code>DUPLICATE_IDEMPOTENCY_KEY</code></td><td>The provided idempotency key was previously used with different request parameters.</td><td>Generate a new unique idempotency key (UUID v4) for each distinct payment request.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="rail-errors">Rail-Specific Return Codes</h2>
+
+  <h3>ACH Return Codes</h3>
+  <p>ACH return codes appear in the <code>returnCode</code> field of returned payments and in the <code>payment.returned</code> webhook event. See the <a href="ach.html#get-return">Get Return Details</a> endpoint for full return information.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Reason</th><th>Representable</th></tr></thead>
+      <tbody>
+        <tr><td><code>R01</code></td><td>Insufficient Funds</td><td>Yes — within 180 days per NACHA rules</td></tr>
+        <tr><td><code>R02</code></td><td>Account Closed</td><td>No</td></tr>
+        <tr><td><code>R03</code></td><td>No Account / Unable to Locate Account</td><td>No</td></tr>
+        <tr><td><code>R04</code></td><td>Invalid Account Number Structure</td><td>No</td></tr>
+        <tr><td><code>R05</code></td><td>Unauthorized Debit to Consumer Account (CCD/CTX) — potential regulatory issue</td><td>No — investigate authorization</td></tr>
+        <tr><td><code>R07</code></td><td>Authorization Revoked by Consumer (PPD/TEL/WEB)</td><td>No</td></tr>
+        <tr><td><code>R08</code></td><td>Payment Stopped</td><td>No</td></tr>
+        <tr><td><code>R10</code></td><td>Customer Advises Not Authorized — Reg E dispute</td><td>No — potential Reg E violation; review</td></tr>
+        <tr><td><code>R16</code></td><td>Account Frozen — regulatory or legal hold</td><td>No</td></tr>
+        <tr><td><code>R20</code></td><td>Non-Transaction Account — savings/money market debit limit exceeded</td><td>Contact RDFI</td></tr>
+        <tr><td><code>R29</code></td><td>Corporate Customer Advises Not Authorized (CCD/CTX/PPD)</td><td>No — investigate authorization</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Instant Payment Return Codes (RTP / FedNow)</h3>
+  <p>ISO 20022 reason codes returned in the pacs.002 rejection/return message from the Receiving Bank:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td><code>AC01</code></td><td>Incorrect Account Number — account number is invalid</td></tr>
+        <tr><td><code>AC04</code></td><td>Closed Account Number — account no longer exists</td></tr>
+        <tr><td><code>AC06</code></td><td>Blocked Account — account is frozen due to regulatory or court order</td></tr>
+        <tr><td><code>AG01</code></td><td>Transaction Forbidden — transaction type not permitted for this account</td></tr>
+        <tr><td><code>AM04</code></td><td>Insufficient Funds — not used by RTP/FedNow (payment accepted regardless of receiver balance); returned only for settlement account issues</td></tr>
+        <tr><td><code>NARR</code></td><td>Narrative — Receiving Bank returned with a free-text explanation. See <code>returnNarrative</code> field.</td></tr>
+        <tr><td><code>RR04</code></td><td>Regulatory Reason — payment blocked for regulatory compliance by Receiving Bank</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="compliance-errors">Compliance Errors</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>HTTP</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>OFAC_MATCH</code></td>
+          <td><span class="status-2xx">202</span></td>
+          <td>Payment accepted but placed on compliance hold due to OFAC SDN list match. The payment will not be submitted to the network until the hold is resolved by a Compliance Officer. Subscribe to <code>compliance.hold</code> and <code>compliance.released</code> / <code>compliance.rejected</code> webhook events.</td>
+        </tr>
+        <tr>
+          <td><code>OFAC_SCREENING_ERROR</code></td>
+          <td><span class="status-5xx">503</span></td>
+          <td>OFAC screening engine is unavailable. Payment placed on hold. PayPlus will retry screening automatically when the screening engine recovers. The <code>compliance.hold</code> webhook event will fire; the payment will proceed when cleared.</td>
+        </tr>
+        <tr>
+          <td><code>SANCTIONED_COUNTRY</code></td>
+          <td><span class="status-4xx">422</span></td>
+          <td>Payment destination country or beneficiary bank country is subject to a comprehensive OFAC sanctions program. Payment cannot be processed. Do not retry — contact your Compliance team.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tip">
+    <strong>Handling OFAC Holds in Your Integration</strong>
+    If your integration uses instant payments for time-sensitive use cases, subscribe to both <code>compliance.hold</code> and <code>compliance.released</code> webhooks. When a payment enters compliance hold, notify the payment initiator that the payment is under review. When the hold is released, the payment proceeds automatically — no resubmission required.
+  </div>
+
+  <div class="doc-nav">
+    <a href="webhooks.html">← Webhooks</a>
+    <a href="index.html">Back to Overview →</a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · Error Codes · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>

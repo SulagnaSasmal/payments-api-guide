@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wire Transfers — PayPlus REST API</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="header-brand" href="index.html">PayPlus REST API <span>· Developer Reference</span></a>
+  <div class="header-breadcrumb"><a href="index.html">Home</a> › Wire Transfers</div>
+  <span class="header-rail-badge">v2.1</span>
+</header>
+
+<nav class="sidebar">
+  <div class="nav-section">Getting Started</div>
+  <a href="index.html">Overview</a>
+  <a href="index.html#authentication">Authentication</a>
+  <a href="index.html#request-format">Requests &amp; Responses</a>
+  <a href="index.html#rate-limiting">Rate Limiting</a>
+  <div class="nav-section">API Reference</div>
+  <a href="ach.html">ACH Payments</a>
+  <a href="instant.html">Instant Payments (RTP / FedNow)</a>
+  <a href="wire.html" class="active">Wire Transfers (Fedwire / SWIFT)</a>
+  <div class="nav-section">Events</div>
+  <a href="webhooks.html">Webhooks</a>
+  <div class="nav-section">Reference</div>
+  <a href="errors.html">Error Codes</a>
+  <div class="nav-section">On This Page</div>
+  <a href="#overview">Overview</a>
+  <a href="#initiate">Initiate Wire Transfer</a>
+  <a href="#get-status">Get Wire Status</a>
+  <a href="#recall">Request Wire Recall</a>
+  <a href="#recall-status">Get Recall Status</a>
+  <a href="#wire-object">Wire Payment Object</a>
+</nav>
+
+<main class="main">
+
+  <h1>Wire Transfers (Fedwire / SWIFT)</h1>
+  <p class="topic-meta">
+    <span>Rails: Fedwire Funds (domestic) · SWIFT (cross-border)</span>
+    <span>Settlement: Real-time (Fedwire) · T+1 to T+3 (SWIFT)</span>
+    <span>Message Standard: ISO 20022 pacs.008 / pacs.009</span>
+  </p>
+
+  <p>
+    The wire transfer endpoint initiates domestic Fedwire transfers and cross-border SWIFT transfers through a single API call. PayPlus automatically selects Fedwire for USD-to-USD domestic transfers and SWIFT for international or cross-currency transfers, or you can specify the rail explicitly.
+  </p>
+
+  <h2 id="overview">Rail Selection</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scenario</th><th>Rail Used</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>USD transfer to a US bank (domestic)</td><td>Fedwire</td><td>Real-time RTGS settlement. Fedwire operates Mon–Fri within operating hours only.</td></tr>
+        <tr><td>USD transfer to a non-US bank</td><td>SWIFT (USD correspondent chain)</td><td>Routes through your institution's USD correspondent bank.</td></tr>
+        <tr><td>Non-USD currency transfer (EUR, GBP, etc.)</td><td>SWIFT</td><td>PayPlus applies the configured correspondent routing for the currency pair.</td></tr>
+        <tr><td>Bank-to-bank cover payment</td><td>Fedwire (pacs.009) or SWIFT (MT 202/pacs.009)</td><td>Specify <code>"transferType": "bank_transfer"</code> in the request.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="initiate">Initiate a Wire Transfer</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/wire</span>
+  </div>
+
+  <p>Creates a wire transfer instruction. Fedwire payments are submitted immediately if the request is received during Fedwire operating hours; otherwise, they are queued for the next operating session. SWIFT payments are submitted to SWIFTNet immediately upon approval and compliance clearance.</p>
+
+  <h3>Request Body Parameters</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>transferType</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td><code>"customer_transfer"</code> (default — customer credit transfer, pacs.008) or <code>"bank_transfer"</code> (interbank/cover payment, pacs.009).</td></tr>
+        <tr><td><code>amount</code></td><td>integer</td><td><span class="required-badge">Required</span></td><td>Amount in cents (USD, or target currency if <code>currency</code> is specified). No maximum for Fedwire; SWIFT limits vary by correspondent arrangement.</td></tr>
+        <tr><td><code>currency</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>ISO 4217 currency code. Default: <code>"USD"</code>. Non-USD currencies automatically route to SWIFT.</td></tr>
+        <tr><td><code>valueDate</code></td><td>string (date)</td><td><span class="optional-badge">Optional</span></td><td>Requested value date in YYYY-MM-DD format. For Fedwire, this is always today (RTGS, no future dating). For SWIFT, future value dating is supported. Must be a banking day in the beneficiary's country.</td></tr>
+        <tr><td><code>originator</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Ordering customer or institution. See <em>Originator Object</em>.</td></tr>
+        <tr><td><code>beneficiary</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Beneficiary customer or institution. See <em>Beneficiary Object</em>.</td></tr>
+        <tr><td><code>beneficiaryBank</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Beneficiary's bank. For Fedwire: <code>routingNumber</code> (ABA). For SWIFT: <code>bic</code> (8 or 11 chars).</td></tr>
+        <tr><td><code>intermediaryBank</code></td><td>object</td><td><span class="optional-badge">Optional</span></td><td>Intermediary/correspondent bank for SWIFT correspondent chains. Fields: <code>bic</code>, <code>name</code>, <code>address</code>.</td></tr>
+        <tr><td><code>remittanceInfo</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Unstructured remittance information. Passed in pacs.008 <code>RmtInf/Ustrd</code>. Maximum 140 characters (Fedwire); 210 characters (SWIFT MT 103 field 70).</td></tr>
+        <tr><td><code>purposeCode</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>ISO 20022 purpose code (e.g., <code>BEXP</code> for business expenses, <code>DIVI</code> for dividends). Required for some cross-border SWIFT corridors.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Your system reference. Maximum 35 characters. Passed in pacs.008 <code>EndToEndId</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Originator Object (Wire)</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>name</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Full name of originating customer or institution.</td></tr>
+        <tr><td><code>accountNumber</code></td><td>string</td><td><span class="required-badge">Required</span></td><td>Originating account number at the sending bank.</td></tr>
+        <tr><td><code>routingNumber</code></td><td>string</td><td>Fedwire: <span class="required-badge">Required</span></td><td>Sending bank ABA routing number.</td></tr>
+        <tr><td><code>address</code></td><td>object</td><td><span class="required-badge">Required</span></td><td>Full address. Required for Travel Rule compliance: <code>street</code>, <code>city</code>, <code>state</code>, <code>postalCode</code>, <code>country</code> (ISO 3166-1 alpha-2).</td></tr>
+        <tr><td><code>lei</code></td><td>string</td><td><span class="optional-badge">Optional</span></td><td>Legal Entity Identifier (20 characters). Required in pacs.008 for large financial institutions per Fedwire ISO 20022 rules.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Example Request — Fedwire (Domestic USD)</h3>
+  <pre><code>POST /v2/payments/wire HTTP/1.1
+Host: api.payplus.yourbank.internal
+Authorization: Bearer eyJhbGciOiJSUzI1NiJ9...
+Content-Type: application/json
+Idempotency-Key: c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f
+
+{
+  "<span class="json-key">transferType</span>": "<span class="json-str">customer_transfer</span>",
+  "<span class="json-key">amount</span>": <span class="json-num">250000000</span>,
+  "<span class="json-key">currency</span>": "<span class="json-str">USD</span>",
+  "<span class="json-key">originator</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">Acme Corporation</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">100200300</span>",
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">021000021</span>",
+    "<span class="json-key">address</span>": {
+      "<span class="json-key">street</span>": "<span class="json-str">1 Liberty Plaza</span>",
+      "<span class="json-key">city</span>": "<span class="json-str">New York</span>",
+      "<span class="json-key">state</span>": "<span class="json-str">NY</span>",
+      "<span class="json-key">postalCode</span>": "<span class="json-str">10006</span>",
+      "<span class="json-key">country</span>": "<span class="json-str">US</span>"
+    }
+  },
+  "<span class="json-key">beneficiary</span>": {
+    "<span class="json-key">name</span>": "<span class="json-str">Riverdale Real Estate Trust</span>",
+    "<span class="json-key">accountNumber</span>": "<span class="json-str">778899001122</span>",
+    "<span class="json-key">address</span>": {
+      "<span class="json-key">street</span>": "<span class="json-str">500 North Michigan Ave</span>",
+      "<span class="json-key">city</span>": "<span class="json-str">Chicago</span>",
+      "<span class="json-key">state</span>": "<span class="json-str">IL</span>",
+      "<span class="json-key">postalCode</span>": "<span class="json-str">60611</span>",
+      "<span class="json-key">country</span>": "<span class="json-str">US</span>"
+    }
+  },
+  "<span class="json-key">beneficiaryBank</span>": {
+    "<span class="json-key">routingNumber</span>": "<span class="json-str">071000013</span>",
+    "<span class="json-key">name</span>": "<span class="json-str">JPMORGAN CHASE BANK NA</span>"
+  },
+  "<span class="json-key">remittanceInfo</span>": "<span class="json-str">RE CLOSING - 500 N MICHIGAN AVE CHICAGO IL 60611</span>",
+  "<span class="json-key">purposeCode</span>": "<span class="json-str">RPRE</span>",
+  "<span class="json-key">referenceId</span>": "<span class="json-str">CLOSING-2026-03-15-001</span>"
+}</code></pre>
+
+  <h3>Response</h3>
+  <p><strong><span class="status-2xx">202 Accepted</span></strong> (Fedwire submissions are asynchronous — settlement confirmation arrives via webhook)</p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_wire_f3a1b9c7d2e4</span>",
+    "<span class="json-key">rail</span>": "<span class="json-str">fedwire</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">approved</span>",
+    "<span class="json-key">amount</span>": <span class="json-num">250000000</span>,
+    "<span class="json-key">currency</span>": "<span class="json-str">USD</span>",
+    "<span class="json-key">uetr</span>": "<span class="json-str">9c2e4f6a-8b0d-1e3f-5a7c-9d1e3f5a7c9d</span>",
+    "<span class="json-key">referenceId</span>": "<span class="json-str">CLOSING-2026-03-15-001</span>",
+    "<span class="json-key">createdAt</span>": "<span class="json-str">2026-03-15T10:45:00Z</span>",
+    "<span class="json-key">estimatedSettlement</span>": "<span class="json-str">2026-03-15T11:00:00Z</span>"
+  }
+}</code></pre>
+
+  <h2 id="get-status">Get Wire Transfer Status</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/wire/{paymentId}</span>
+  </div>
+
+  <p>Returns current status and details of a wire transfer. The <code>uetr</code> field (Unique End-to-End Transaction Reference) is present for all ISO 20022 wire transfers and can be used for SWIFT gpi tracking queries.</p>
+
+  <h3>Wire Payment Status Values</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Status</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>validated</code></td><td>Format validation passed; awaiting approval</td></tr>
+        <tr><td><code>pending_approval</code></td><td>Awaiting dual-control approval (typical for high-value wires)</td></tr>
+        <tr><td><code>compliance_hold</code></td><td>OFAC screening hold — Compliance Officer action required</td></tr>
+        <tr><td><code>approved</code></td><td>Approved; queued for Fedwire operating hours (if after-hours) or immediate submission (if during hours)</td></tr>
+        <tr><td><code>submitted</code></td><td>Submitted to Fedwire or SWIFTNet; awaiting settlement confirmation</td></tr>
+        <tr><td><code>settled</code></td><td>Fedwire settlement confirmed (RTGS, immediate) or SWIFT correspondent confirmed receipt</td></tr>
+        <tr><td><code>recall_pending</code></td><td>Recall request submitted (camt.056); awaiting beneficiary bank response</td></tr>
+        <tr><td><code>recalled</code></td><td>Funds returned following successful recall</td></tr>
+        <tr><td><code>recall_rejected</code></td><td>Recall request rejected by beneficiary bank</td></tr>
+        <tr><td><code>rejected</code></td><td>Rejected by PayPlus compliance or by Fedwire/SWIFT network</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="recall">Request Wire Recall</h2>
+
+  <div class="endpoint">
+    <span class="method method-post">POST</span>
+    <span class="endpoint-url">/v2/payments/wire/{paymentId}/recall</span>
+  </div>
+
+  <p>Initiates a payment recall request for a settled wire transfer. PayPlus submits a <code>camt.056</code> (Payment Cancellation Request) to the beneficiary bank via Fedwire or SWIFT. Recall is not guaranteed — the beneficiary bank may reject the recall if funds have been applied to the beneficiary account.</p>
+
+  <div class="warning">
+    <strong>Recall Is Not Reversal</strong>
+    A recall request is a request — not a reversal. The beneficiary bank must agree to return the funds. For SWIFT, the SWIFT gSRP (global Stop and Recall) process is used. For Fedwire, the Federal Reserve facilitates the recall inquiry but cannot force the return of funds. Contact the beneficiary bank directly in parallel with the API recall request.
+  </div>
+
+  <h3>Request Body</h3>
+  <pre><code>{
+  "<span class="json-key">reason</span>": "<span class="json-str">DUPL</span>",
+  "<span class="json-key">reasonDetail</span>": "<span class="json-str">Duplicate wire transfer — original payment ref CLOSING-2026-03-14-001 was resent in error.</span>",
+  "<span class="json-key">requestorContactName</span>": "<span class="json-str">Sarah Johnson</span>",
+  "<span class="json-key">requestorContactPhone</span>": "<span class="json-str">+1-212-555-0100</span>"
+}</code></pre>
+
+  <h3>Recall Reason Codes</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>DUPL</code></td><td>Duplicate payment — same payment sent twice</td></tr>
+        <tr><td><code>TECH</code></td><td>Technical error — payment sent due to system error</td></tr>
+        <tr><td><code>FRAD</code></td><td>Fraudulent origin — payment initiated without authorization</td></tr>
+        <tr><td><code>CUST</code></td><td>Requested by the ordering customer — wrong beneficiary or wrong amount</td></tr>
+        <tr><td><code>AM09</code></td><td>Wrong amount — amount different from what was intended</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Response</h3>
+  <p><strong><span class="status-2xx">202 Accepted</span></strong></p>
+  <pre><code>{
+  "<span class="json-key">data</span>": {
+    "<span class="json-key">recallId</span>": "<span class="json-str">rcl_9e3c7f1a2b4d</span>",
+    "<span class="json-key">paymentId</span>": "<span class="json-str">pmt_wire_f3a1b9c7d2e4</span>",
+    "<span class="json-key">status</span>": "<span class="json-str">recall_pending</span>",
+    "<span class="json-key">camt056MsgId</span>": "<span class="json-str">CNCL202603150001</span>",
+    "<span class="json-key">submittedAt</span>": "<span class="json-str">2026-03-15T14:00:00Z</span>",
+    "<span class="json-key">responseDeadline</span>": "<span class="json-str">2026-03-20T18:00:00Z</span>"
+  }
+}</code></pre>
+
+  <h2 id="recall-status">Get Recall Status</h2>
+
+  <div class="endpoint">
+    <span class="method method-get">GET</span>
+    <span class="endpoint-url">/v2/payments/wire/{paymentId}/recall</span>
+  </div>
+
+  <p>Returns the current status of a recall request. Subscribe to the <code>wire.recall.resolved</code> webhook event for real-time notification of the beneficiary bank's response.</p>
+
+  <h2 id="wire-object">Wire Payment Object Reference</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>paymentId</code></td><td>string</td><td>Unique PayPlus identifier. Format: <code>pmt_wire_{16 chars}</code></td></tr>
+        <tr><td><code>rail</code></td><td>string</td><td><code>"fedwire"</code> or <code>"swift"</code></td></tr>
+        <tr><td><code>transferType</code></td><td>string</td><td><code>"customer_transfer"</code> or <code>"bank_transfer"</code></td></tr>
+        <tr><td><code>status</code></td><td>string</td><td>Current payment status</td></tr>
+        <tr><td><code>amount</code></td><td>integer</td><td>Amount in cents in the specified currency</td></tr>
+        <tr><td><code>currency</code></td><td>string</td><td>ISO 4217 currency code</td></tr>
+        <tr><td><code>uetr</code></td><td>string</td><td>Unique End-to-End Transaction Reference (UUID v4). Globally unique across all ISO 20022 payment networks.</td></tr>
+        <tr><td><code>imad</code></td><td>string</td><td>Input Message Accountability Data (Fedwire only). Available after <code>status = "submitted"</code>.</td></tr>
+        <tr><td><code>omad</code></td><td>string</td><td>Output Message Accountability Data (Fedwire only). Available after <code>status = "settled"</code>.</td></tr>
+        <tr><td><code>swiftGpiStatus</code></td><td>string</td><td>SWIFT gpi tracker status (SWIFT only): <code>ACSP</code>, <code>ACCC</code>, <code>RJCT</code>, <code>PDNG</code>.</td></tr>
+        <tr><td><code>settlementTimestamp</code></td><td>string</td><td>ISO 8601 timestamp of settlement confirmation. Present when <code>status = "settled"</code>.</td></tr>
+        <tr><td><code>referenceId</code></td><td>string</td><td>Your system's reference identifier (passed as pacs.008 EndToEndId)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-nav">
+    <a href="instant.html">← Instant Payments</a>
+    <a href="webhooks.html">Next: Webhooks →</a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <span>PayPlus REST API · Wire Transfers · v2.1 · March 2026</span>
+  <span>Confidential — Internal Developer Use</span>
+</footer>
+
+</body>
+</html>
