@@ -64,13 +64,13 @@
 
   <div class="important">
     <strong>Idempotent Webhook Handlers Required</strong>
-    Due to retry logic, your endpoint may receive the same event more than once. Always use the <code>eventId</code> field to deduplicate events before processing. Store processed <code>eventId</code> values and skip events you've already handled.
+    Because of retry logic, your endpoint may receive the same event more than once. Use the <code>eventId</code> field to deduplicate events before processing — store event IDs you've already handled and skip duplicates.
   </div>
 
   <h2 id="registration">Webhook Registration</h2>
 
   <h3>Register via Admin Console</h3>
-  <p>Navigate to <strong>Administration &gt; API &gt; Webhooks &gt; Add Endpoint</strong>. Enter the endpoint URL, select the event types to subscribe to, and save. PayPlus generates and displays the signing secret — store this securely. It is shown only once.</p>
+  <p>Navigate to <strong>Administration &gt; API &gt; Webhooks &gt; Add Endpoint</strong>. Enter the endpoint URL, select the event types, and select <strong>Save</strong>. PayPlus generates and displays the signing secret — copy it before leaving this page. It’s shown only once.</p>
 
   <h3>Register via API</h3>
 
