@@ -2,6 +2,9 @@
 
 **A documentation portfolio project by Sulagna Sasmal — Senior Technical Writer | Documentation Architect**
 
+[![Live Site](https://img.shields.io/badge/Live%20Site-sulagnasasmal.github.io-E8A84C?style=flat-square&logo=githubpages&logoColor=black)](https://sulagnasasmal.github.io/payments-api-guide/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-payments--api--guide-181717?style=flat-square&logo=github)](https://github.com/SulagnaSasmal/payments-api-guide)
+
 ---
 
 ## About This Project
@@ -42,7 +45,7 @@ This guide demonstrates:
 
 This project is part of a payments documentation suite:
 
-- **[PayPlus Admin Guide](../payplus-admin-guide/)** — System administration, installation, user management, connector configuration, workflow engine, compliance configuration, and troubleshooting for the PayPlus Enterprise payment hub.
+- **[PayPlus Admin Guide](https://sulagnasasmal.github.io/payplus-admin-guide/)** — System administration, installation, user management, connector configuration, workflow engine, compliance configuration, and troubleshooting for the PayPlus Enterprise payment hub.
 - **[US Payments Hub](https://sulagnasasmal.github.io/us-payments-hub/)** — Operations and compliance reference covering all 6 US payment rails (ACH, Fedwire, SWIFT, RTP, FedNow, Card Networks).
 
 ---
