@@ -187,7 +187,8 @@ pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
 .section-card-desc  { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-top: 0.35rem; }
 
 /* ── FOOTER ── */
-.site-footer { margin-left: var(--nav-width); padding: 1rem 3rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border); display: flex; justify-content: space-between; }
+.site-footer { margin-left: var(--nav-width); padding: 1rem 3rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem; }
+.site-footer .copyright { width: 100%; border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 0.25rem; font-style: italic; }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
